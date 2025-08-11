@@ -169,6 +169,9 @@ const ClaudeCodeBuilder = () => {
       // Remove React import since we're loading it globally
       appJs = appJs.replace(/import\s+React.*?;?\s*/g, '');
       appJs = appJs.replace(/import\s+\{.*?\}\s+from\s+['"]react['"];?\s*/g, '');
+      
+      // Remove framer-motion imports since we're loading it globally
+      appJs = appJs.replace(/import\s+\{.*?\}\s+from\s+['"]framer-motion['"];?\s*/g, '');
     }
 
     return `
@@ -181,6 +184,7 @@ const ClaudeCodeBuilder = () => {
         <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
         <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
         <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+        <script src="https://unpkg.com/framer-motion@10/dist/framer-motion.js"></script>
         <style>
           body { 
             margin: 0; 
@@ -196,6 +200,27 @@ const ClaudeCodeBuilder = () => {
         <script type="text/babel">
           // Make React hooks available globally
           const { useState, useEffect, useCallback, useMemo, useRef } = React;
+          
+          // Make Framer Motion available globally with fallbacks
+          const FramerMotion = window.FramerMotion || {};
+          const { motion, AnimatePresence } = FramerMotion;
+          
+          // If motion is not available, create simple fallbacks
+          if (!motion) {
+            window.motion = {
+              div: 'div',
+              span: 'span',
+              p: 'p',
+              h1: 'h1', h2: 'h2', h3: 'h3',
+              button: 'button',
+              section: 'section',
+              article: 'article',
+              header: 'header',
+              footer: 'footer',
+              nav: 'nav'
+            };
+            console.warn('Framer Motion not loaded - using fallback elements');
+          }
           
           ${appJs}
           
@@ -808,7 +833,7 @@ Provide working improvements.`;
               ref={previewRef}
               className="w-full h-[calc(100%-40px)] border-0"
               title="Preview"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+              sandbox="allow-scripts allow-same-origin"
               srcDoc={previewHtml}
             />
           </div>
