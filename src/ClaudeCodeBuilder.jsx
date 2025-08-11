@@ -1,8 +1,11 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 
 const ClaudeCodeBuilder = () => {
+  // Main state
+  const [currentScreen, setCurrentScreen] = useState('landing'); // landing, planning, ide
   const [isGenerating, setIsGenerating] = useState(false);
   const [projectDescription, setProjectDescription] = useState('');
+  const [projectPlan, setProjectPlan] = useState('');
   const [generatedFiles, setGeneratedFiles] = useState([]);
   const [activeFile, setActiveFile] = useState('');
   const [fileContents, setFileContents] = useState({});
@@ -13,7 +16,9 @@ const ClaudeCodeBuilder = () => {
   const [leftPanelWidth, setLeftPanelWidth] = useState(50);
   const [rightPanelHeight, setRightPanelHeight] = useState(70);
   const [showConsole, setShowConsole] = useState(true);
+  const [apiStatus, setApiStatus] = useState('unknown');
   
+  // Refs
   const previewRef = useRef(null);
   const isDraggingVertical = useRef(false);
   const isDraggingHorizontal = useRef(false);
@@ -24,9 +29,15 @@ const ClaudeCodeBuilder = () => {
     setConsoleOutput(prev => [...prev.slice(-49), { timestamp, message, type }]);
   }, []);
 
-  const callClaudeAPI = async (messages, options = {}) => {
+  useEffect(() => {
+    addToConsole('Claude Code SDK: Starting project builder...', 'info');
+    addToConsole('Ready for Claude Code SDK operations', 'info');
+  }, [addToConsole]);
+
+  const callClaudeCodeSDK = async (messages, options = {}) => {
     try {
-      addToConsole('Making Claude API request...', 'info');
+      addToConsole('CLAUDE CODE SDK: Starting generation...', 'info');
+      addToConsole('Making API call...', 'info');
       
       const response = await fetch('/api/claude', {
         method: 'POST',
@@ -41,17 +52,24 @@ const ClaudeCodeBuilder = () => {
         })
       });
 
+      addToConsole('Response status: ' + response.status, response.ok ? 'success' : 'error');
+
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(`API Error ${response.status}: ${errorData.error}`);
+        addToConsole('Claude Code SDK Error: ' + JSON.stringify(errorData), 'error');
+        setApiStatus('error');
+        throw new Error(`Claude Code SDK API Error ${response.status}: ${errorData.error || 'Unknown error'}`);
       }
 
       const data = await response.json();
-      addToConsole('Claude API response received', 'success');
+      addToConsole('Claude Code SDK: Success', 'success');
+      setApiStatus('working');
+      
       return data;
       
     } catch (error) {
-      addToConsole(`API Error: ${error.message}`, 'error');
+      addToConsole('Claude Code SDK Error: ' + error.message, 'error');
+      setApiStatus('error');
       throw error;
     }
   };
@@ -184,20 +202,58 @@ const ClaudeCodeBuilder = () => {
     updatePreview();
   }, [updatePreview]);
 
-  const generateProject = async () => {
+  const generateProjectPlan = async () => {
     if (!projectDescription.trim()) {
       addToConsole('Please enter a project description', 'error');
       return;
     }
 
     setIsGenerating(true);
-    addToConsole(`Starting project generation: "${projectDescription}"`, 'info');
+    setCurrentScreen('planning');
+    addToConsole('Starting project plan generation: ' + projectDescription, 'info');
 
     try {
-      const systemPrompt = `You are Claude Code, a professional web developer assistant. Create a complete, working project based on the user's description.
+      const systemPrompt = `You are Claude Code SDK, a professional project planning assistant. Create a detailed project plan for the described project.
+
+Provide:
+1. Project overview
+2. Technical architecture 
+3. File structure
+4. Key features
+5. Implementation approach
+
+Be detailed and technical.`;
+
+      const response = await callClaudeCodeSDK([
+        { role: 'user', content: `Create a detailed project plan for: ${projectDescription}` }
+      ], { 
+        system: systemPrompt,
+        maxTokens: 2048 
+      });
+
+      if (response.content?.[0]?.text) {
+        const plan = response.content[0].text;
+        setProjectPlan(plan);
+        addToConsole('Project plan generated successfully', 'success');
+      }
+    } catch (error) {
+      addToConsole('Plan generation failed: ' + error.message, 'error');
+      setCurrentScreen('landing');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const generateProject = async () => {
+    setIsGenerating(true);
+    setCurrentScreen('ide');
+    addToConsole('Starting project generation...', 'info');
+
+    try {
+      const systemPrompt = `You are Claude Code SDK. Generate a complete, working project based on the plan.
 
 Generate EXACTLY these 4 files:
-1. App.js - A complete React component
+1. App.js - Complete React component
 2. styles.css - Complete styling 
 3. index.html - Full HTML page
 4. README.md - Project documentation
@@ -225,8 +281,8 @@ Use this EXACT format for each file:
 
 Make it functional and professional.`;
 
-      const response = await callClaudeAPI([
-        { role: 'user', content: projectDescription }
+      const response = await callClaudeCodeSDK([
+        { role: 'user', content: `Generate the complete project files for: ${projectDescription}\n\nProject Plan:\n${projectPlan}` }
       ], { 
         system: systemPrompt,
         maxTokens: 4096 
@@ -236,7 +292,7 @@ Make it functional and professional.`;
         const content = response.content[0].text;
         const files = parseFiles(content);
         
-        addToConsole(`Parsed ${files.length} files from response`, 'info');
+        addToConsole('Parsed ' + files.length + ' files from response', 'info');
         
         if (files.length === 0) {
           addToConsole('No files found in response', 'error');
@@ -256,13 +312,13 @@ Make it functional and professional.`;
         }
         
         files.forEach(file => {
-          addToConsole(`Generated: ${file.name} (${file.content.length} chars)`, 'success');
+          addToConsole('Generated: ' + file.name + ' (' + file.content.length + ' chars)', 'success');
         });
         
         addToConsole('Project generation completed', 'success');
       }
     } catch (error) {
-      addToConsole(`Generation failed: ${error.message}`, 'error');
+      addToConsole('Generation failed: ' + error.message, 'error');
     } finally {
       setIsGenerating(false);
     }
@@ -275,11 +331,11 @@ Make it functional and professional.`;
     setChatInput('');
     
     setChatMessages(prev => [...prev, { role: 'user', content: userMessage }]);
-    addToConsole(`Chat: ${userMessage}`, 'info');
+    addToConsole('Chat: ' + userMessage, 'info');
 
     try {
-      const systemPrompt = `You are helping improve a web project. Current files:
-${generatedFiles.map(f => `- ${f.name}`).join('\n')}
+      const systemPrompt = `You are Claude Code SDK helping improve a web project. Current files:
+${generatedFiles.map(f => '- ' + f.name).join('\n')}
 
 When updating code, return the complete file using this format:
 \`\`\`javascript
@@ -290,7 +346,7 @@ When updating code, return the complete file using this format:
 Provide working improvements.`;
 
       const chatHistory = chatMessages.slice(-4);
-      const response = await callClaudeAPI([
+      const response = await callClaudeCodeSDK([
         ...chatHistory,
         { role: 'user', content: userMessage }
       ], { 
@@ -309,15 +365,15 @@ Provide working improvements.`;
               ...prev,
               [file.name]: file.content
             }));
-            addToConsole(`Updated: ${file.name}`, 'success');
+            addToConsole('Updated: ' + file.name, 'success');
           });
         }
         
         addToConsole('Claude responded', 'success');
       }
     } catch (error) {
-      setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${error.message}` }]);
-      addToConsole(`Chat error: ${error.message}`, 'error');
+      setChatMessages(prev => [...prev, { role: 'assistant', content: 'Error: ' + error.message }]);
+      addToConsole('Chat error: ' + error.message, 'error');
     }
   };
 
@@ -326,7 +382,7 @@ Provide working improvements.`;
       ...prev,
       [filename]: content
     }));
-    addToConsole(`Saved: ${filename}`, 'info');
+    addToConsole('Saved: ' + filename, 'info');
   };
 
   const downloadProject = () => {
@@ -348,7 +404,7 @@ Provide working improvements.`;
       URL.revokeObjectURL(url);
     });
 
-    addToConsole(`Downloaded ${generatedFiles.length} files`, 'success');
+    addToConsole('Downloaded ' + generatedFiles.length + ' files', 'success');
   };
 
   const popOutPreview = () => {
@@ -367,7 +423,7 @@ Provide working improvements.`;
         addToConsole('Pop-up blocked', 'error');
       }
     } catch (error) {
-      addToConsole(`Pop-out failed: ${error.message}`, 'error');
+      addToConsole('Pop-out failed: ' + error.message, 'error');
     }
   };
 
@@ -411,6 +467,157 @@ Provide working improvements.`;
     };
   }, [handleMouseMove, handleMouseUp]);
 
+  // Landing Page
+  if (currentScreen === 'landing') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 text-white">
+        <div className="container mx-auto px-6 py-12">
+          <div className="text-center mb-12">
+            <h1 className="text-6xl font-bold mb-4 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+              Claude Code Builder
+            </h1>
+            <p className="text-xl text-gray-300 mb-8">
+              Professional AI-powered development platform using Claude Code SDK
+            </p>
+            <div className="flex items-center justify-center gap-4 text-sm text-gray-400">
+              <span className={`px-3 py-1 rounded-full ${apiStatus === 'working' ? 'bg-green-900 text-green-300' : apiStatus === 'error' ? 'bg-red-900 text-red-300' : 'bg-gray-800 text-gray-400'}`}>
+                Claude Code SDK: {apiStatus === 'working' ? 'Connected' : apiStatus === 'error' ? 'Error' : 'Ready'}
+              </span>
+            </div>
+          </div>
+
+          <div className="max-w-4xl mx-auto">
+            <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-8 shadow-2xl border border-gray-700">
+              <h2 className="text-2xl font-semibold mb-6 text-center">Describe Your Project</h2>
+              
+              <div className="space-y-6">
+                <textarea
+                  value={projectDescription}
+                  onChange={(e) => setProjectDescription(e.target.value)}
+                  placeholder="Describe your project in detail... (e.g., 'Build a modern todo app with dark theme, local storage, categories, and drag-and-drop functionality')"
+                  className="w-full h-32 px-4 py-3 bg-gray-900/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 resize-none"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      generateProjectPlan();
+                    }
+                  }}
+                />
+                
+                <div className="flex justify-center">
+                  <button
+                    onClick={generateProjectPlan}
+                    disabled={isGenerating || !projectDescription.trim()}
+                    className="px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-gray-700 disabled:to-gray-700 text-white font-semibold rounded-lg transition-all duration-200 transform hover:scale-105 disabled:scale-100 disabled:cursor-not-allowed flex items-center gap-3"
+                  >
+                    {isGenerating ? (
+                      <>
+                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Generating Plan...
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-xl">⚡</span>
+                        Generate Project Plan
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-12 grid md:grid-cols-3 gap-6">
+              <div className="bg-gray-800/30 backdrop-blur-sm rounded-xl p-6 border border-gray-700">
+                <div className="text-3xl mb-4">🎯</div>
+                <h3 className="text-lg font-semibold mb-2">Project Planning</h3>
+                <p className="text-gray-400 text-sm">Claude Code SDK analyzes your requirements and creates a detailed technical plan</p>
+              </div>
+              
+              <div className="bg-gray-800/30 backdrop-blur-sm rounded-xl p-6 border border-gray-700">
+                <div className="text-3xl mb-4">⚙️</div>
+                <h3 className="text-lg font-semibold mb-2">Code Generation</h3>
+                <p className="text-gray-400 text-sm">Generates complete, working code files with professional structure and best practices</p>
+              </div>
+              
+              <div className="bg-gray-800/30 backdrop-blur-sm rounded-xl p-6 border border-gray-700">
+                <div className="text-3xl mb-4">🔧</div>
+                <h3 className="text-lg font-semibold mb-2">Live Development</h3>
+                <p className="text-gray-400 text-sm">Professional IDE with live preview, real-time editing, and AI-powered assistance</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Planning Screen
+  if (currentScreen === 'planning') {
+    return (
+      <div className="min-h-screen bg-gray-900 text-white">
+        <div className="border-b border-gray-800 bg-gray-800 p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-xl font-bold flex items-center gap-2">
+                <span className="text-2xl">⚡</span>
+                Claude Code Builder - Project Planning
+              </h1>
+              <p className="text-sm text-gray-400 mt-1">Claude Code SDK Project Analysis</p>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  setCurrentScreen('landing');
+                  setProjectPlan('');
+                }}
+                className="px-3 py-1.5 bg-gray-600 hover:bg-gray-700 text-white text-sm rounded-md transition-colors"
+              >
+                Back to Landing
+              </button>
+              <button
+                onClick={generateProject}
+                disabled={isGenerating || !projectPlan}
+                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white rounded-md transition-colors whitespace-nowrap"
+              >
+                {isGenerating ? 'Generating Files...' : 'Generate Project Files'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6">
+          <div className="max-w-4xl mx-auto">
+            <div className="bg-gray-800 rounded-lg p-6 mb-6">
+              <h2 className="text-lg font-semibold mb-3">Project Description</h2>
+              <p className="text-gray-300">{projectDescription}</p>
+            </div>
+
+            <div className="bg-gray-800 rounded-lg p-6">
+              <h2 className="text-lg font-semibold mb-4">Project Plan</h2>
+              {isGenerating ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center">
+                    <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                    <p className="text-gray-400">Claude Code SDK is analyzing your project...</p>
+                  </div>
+                </div>
+              ) : projectPlan ? (
+                <div className="prose prose-invert max-w-none">
+                  <pre className="whitespace-pre-wrap text-gray-300 text-sm leading-relaxed">{projectPlan}</pre>
+                </div>
+              ) : (
+                <div className="text-center py-12 text-gray-500">
+                  <p>Project plan will appear here...</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // IDE Screen (existing IDE interface)
   return (
     <div className="min-h-screen bg-gray-950 text-white" ref={containerRef}>
       <div className="border-b border-gray-800 bg-gray-900 p-4">
@@ -418,14 +625,20 @@ Provide working improvements.`;
           <div>
             <h1 className="text-xl font-bold text-white flex items-center gap-2">
               <span className="text-2xl">⚡</span>
-              Claude Code Builder
+              Claude Code Builder - IDE
             </h1>
             <p className="text-sm text-gray-400 mt-1">
-              AI-powered development platform
+              Claude Code SDK Development Environment
             </p>
           </div>
           
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setCurrentScreen('planning')}
+              className="px-3 py-1.5 bg-gray-600 hover:bg-gray-700 text-white text-sm rounded-md transition-colors"
+            >
+              Back to Plan
+            </button>
             <button
               onClick={downloadProject}
               disabled={generatedFiles.length === 0}
@@ -435,27 +648,9 @@ Provide working improvements.`;
             </button>
           </div>
         </div>
-
-        <div className="mt-4 flex gap-3">
-          <input
-            type="text"
-            value={projectDescription}
-            onChange={(e) => setProjectDescription(e.target.value)}
-            placeholder="Describe your project..."
-            className="flex-1 px-4 py-2 bg-gray-800 border border-gray-700 rounded-md text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
-            onKeyPress={(e) => e.key === 'Enter' && generateProject()}
-          />
-          <button
-            onClick={generateProject}
-            disabled={isGenerating}
-            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white rounded-md transition-colors whitespace-nowrap"
-          >
-            {isGenerating ? 'Generating...' : 'Generate with Claude'}
-          </button>
-        </div>
       </div>
 
-      <div className="flex h-[calc(100vh-140px)]">
+      <div className="flex h-[calc(100vh-80px)]">
         <div 
           className="bg-gray-900 border-r border-gray-800 flex flex-col"
           style={{ width: `${leftPanelWidth}%` }}
@@ -490,7 +685,7 @@ Provide working improvements.`;
               <div className="flex items-center justify-center h-full text-gray-500">
                 <div className="text-center">
                   <p>Select a file to edit</p>
-                  <p className="text-sm mt-2">Generate a project to get started</p>
+                  <p className="text-sm mt-2">Files will appear here after generation</p>
                 </div>
               </div>
             )}
@@ -498,13 +693,13 @@ Provide working improvements.`;
 
           <div className="border-t border-gray-800 bg-gray-850">
             <div className="p-3 border-b border-gray-700">
-              <h3 className="text-sm font-medium text-gray-300">Chat with Claude</h3>
+              <h3 className="text-sm font-medium text-gray-300">Chat with Claude Code SDK</h3>
             </div>
             
             <div className="h-40 overflow-y-auto p-3 space-y-2">
               {chatMessages.length === 0 ? (
                 <div className="text-gray-500 text-sm text-center py-4">
-                  Ask Claude to modify your code...
+                  Ask Claude Code SDK to modify your code...
                 </div>
               ) : (
                 chatMessages.map((msg, idx) => (
@@ -521,7 +716,7 @@ Provide working improvements.`;
                   type="text"
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Ask Claude to modify the code..."
+                  placeholder="Ask Claude Code SDK to modify the code..."
                   className="flex-1 px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-white text-sm focus:outline-none focus:border-blue-500"
                   onKeyPress={(e) => e.key === 'Enter' && chatWithClaude()}
                 />
