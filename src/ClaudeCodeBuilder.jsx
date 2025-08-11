@@ -118,7 +118,7 @@ const ClaudeCodeBuilder = () => {
   };
 
   const generatePreviewHtml = () => {
-    const appJs = fileContents['App.js'] || fileContents['App.jsx'] || '';
+    let appJs = fileContents['App.js'] || fileContents['App.jsx'] || '';
     const css = fileContents['styles.css'] || fileContents['App.css'] || fileContents['index.css'] || '';
     const html = fileContents['index.html'] || '';
 
@@ -159,6 +159,18 @@ const ClaudeCodeBuilder = () => {
       return html;
     }
 
+    // Clean up the JavaScript code for browser execution
+    if (appJs) {
+      // Remove ES6 imports/exports that don't work in browser
+      appJs = appJs.replace(/import\s+.*?from\s+['"][^'"]*['"];?\s*/g, '');
+      appJs = appJs.replace(/export\s+default\s+/g, '');
+      appJs = appJs.replace(/export\s+/g, '');
+      
+      // Remove React import since we're loading it globally
+      appJs = appJs.replace(/import\s+React.*?;?\s*/g, '');
+      appJs = appJs.replace(/import\s+\{.*?\}\s+from\s+['"]react['"];?\s*/g, '');
+    }
+
     return `
       <!DOCTYPE html>
       <html lang="en">
@@ -175,12 +187,16 @@ const ClaudeCodeBuilder = () => {
             padding: 0; 
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
           }
+          * { box-sizing: border-box; }
           ${css}
         </style>
       </head>
       <body>
         <div id="root"></div>
         <script type="text/babel">
+          // Make React hooks available globally
+          const { useState, useEffect, useCallback, useMemo, useRef } = React;
+          
           ${appJs}
           
           // Try multiple ways to render
@@ -202,14 +218,15 @@ const ClaudeCodeBuilder = () => {
                   const root = ReactDOM.createRoot(rootElement);
                   root.render(React.createElement(window[componentNames[0]]));
                 } else {
-                  rootElement.innerHTML = '<div style="padding: 20px; color: red;">No React component found. Make sure your component is named "App" or exported properly.</div>';
+                  rootElement.innerHTML = '<div style="padding: 20px; color: red; font-family: monospace;">No React component found. Make sure your component is named "App".</div>';
                 }
               }
             } catch (error) {
-              rootElement.innerHTML = '<div style="padding: 20px; color: red;">Error rendering component: ' + error.message + '</div>';
+              console.error('Preview error:', error);
+              rootElement.innerHTML = '<div style="padding: 20px; color: red; font-family: monospace;">Error: ' + error.message + '</div>';
             }
           } else {
-            document.body.innerHTML = '<div style="padding: 20px; color: red;">React libraries failed to load</div>';
+            document.body.innerHTML = '<div style="padding: 20px; color: red; font-family: monospace;">React libraries failed to load</div>';
           }
         </script>
       </body>
@@ -791,7 +808,7 @@ Provide working improvements.`;
               ref={previewRef}
               className="w-full h-[calc(100%-40px)] border-0"
               title="Preview"
-              sandbox="allow-scripts allow-same-origin"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
               srcDoc={previewHtml}
             />
           </div>
