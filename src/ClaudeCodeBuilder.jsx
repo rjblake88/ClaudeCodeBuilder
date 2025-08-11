@@ -161,17 +161,19 @@ const ClaudeCodeBuilder = () => {
 
     // Clean up the JavaScript code for browser execution
     if (appJs) {
-      // Remove ES6 imports/exports that don't work in browser
-      appJs = appJs.replace(/import\s+.*?from\s+['"][^'"]*['"];?\s*/g, '');
+      // Remove ALL import statements more aggressively
+      appJs = appJs.replace(/^import\s+.*?;?\s*$/gm, '');
+      appJs = appJs.replace(/import\s*\{[^}]*\}\s*from\s*['"][^'"]*['"];?\s*/g, '');
+      appJs = appJs.replace(/import\s+\w+\s*,?\s*\{[^}]*\}\s*from\s*['"][^'"]*['"];?\s*/g, '');
+      appJs = appJs.replace(/import\s+\w+\s+from\s*['"][^'"]*['"];?\s*/g, '');
+      appJs = appJs.replace(/import\s*['"][^'"]*['"];?\s*/g, '');
+      
+      // Remove export statements
       appJs = appJs.replace(/export\s+default\s+/g, '');
       appJs = appJs.replace(/export\s+/g, '');
       
-      // Remove React import since we're loading it globally
-      appJs = appJs.replace(/import\s+React.*?;?\s*/g, '');
-      appJs = appJs.replace(/import\s+\{.*?\}\s+from\s+['"]react['"];?\s*/g, '');
-      
-      // Remove framer-motion imports since we're loading it globally
-      appJs = appJs.replace(/import\s+\{.*?\}\s+from\s+['"]framer-motion['"];?\s*/g, '');
+      // Clean up any remaining empty lines
+      appJs = appJs.replace(/^\s*\n/gm, '');
     }
 
     return `
@@ -185,6 +187,7 @@ const ClaudeCodeBuilder = () => {
         <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
         <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
         <script src="https://unpkg.com/framer-motion@10/dist/framer-motion.js"></script>
+        <script src="https://unpkg.com/gsap@3/dist/gsap.min.js"></script>
         <style>
           body { 
             margin: 0; 
@@ -205,6 +208,9 @@ const ClaudeCodeBuilder = () => {
           const FramerMotion = window.FramerMotion || {};
           const { motion, AnimatePresence } = FramerMotion;
           
+          // Make GSAP available globally
+          const gsap = window.gsap;
+          
           // If motion is not available, create simple fallbacks
           if (!motion) {
             window.motion = {
@@ -220,6 +226,17 @@ const ClaudeCodeBuilder = () => {
               nav: 'nav'
             };
             console.warn('Framer Motion not loaded - using fallback elements');
+          }
+          
+          // If GSAP is not available, create simple fallbacks
+          if (!gsap) {
+            window.gsap = {
+              to: () => {},
+              from: () => {},
+              timeline: () => ({ to: () => {}, from: () => {} }),
+              set: () => {}
+            };
+            console.warn('GSAP not loaded - using fallback functions');
           }
           
           ${appJs}
