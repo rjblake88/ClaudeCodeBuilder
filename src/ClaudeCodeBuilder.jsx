@@ -166,11 +166,15 @@ const ClaudeCodeBuilder = () => {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Generated App</title>
-        <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
-        <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+        <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+        <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+        <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
         <style>
-          body { margin: 0; padding: 0; font-family: system-ui; }
+          body { 
+            margin: 0; 
+            padding: 0; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+          }
           ${css}
         </style>
       </head>
@@ -179,9 +183,33 @@ const ClaudeCodeBuilder = () => {
         <script type="text/babel">
           ${appJs}
           
-          if (typeof App !== 'undefined') {
-            const root = ReactDOM.createRoot(document.getElementById('root'));
-            root.render(React.createElement(App));
+          // Try multiple ways to render
+          const rootElement = document.getElementById('root');
+          if (rootElement && typeof React !== 'undefined' && typeof ReactDOM !== 'undefined') {
+            try {
+              if (typeof App !== 'undefined') {
+                const root = ReactDOM.createRoot(rootElement);
+                root.render(React.createElement(App));
+              } else {
+                // Fallback: try to find any React component
+                const componentNames = Object.keys(window).filter(key => 
+                  typeof window[key] === 'function' && 
+                  key[0] === key[0].toUpperCase() &&
+                  key !== 'React' && key !== 'ReactDOM'
+                );
+                
+                if (componentNames.length > 0) {
+                  const root = ReactDOM.createRoot(rootElement);
+                  root.render(React.createElement(window[componentNames[0]]));
+                } else {
+                  rootElement.innerHTML = '<div style="padding: 20px; color: red;">No React component found. Make sure your component is named "App" or exported properly.</div>';
+                }
+              }
+            } catch (error) {
+              rootElement.innerHTML = '<div style="padding: 20px; color: red;">Error rendering component: ' + error.message + '</div>';
+            }
+          } else {
+            document.body.innerHTML = '<div style="padding: 20px; color: red;">React libraries failed to load</div>';
           }
         </script>
       </body>
